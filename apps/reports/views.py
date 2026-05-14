@@ -1,0 +1,129 @@
+from io import BytesIO
+
+from django.http import FileResponse
+from rest_framework import permissions, views
+from rest_framework.response import Response
+
+from apps.workflows.models import WorkflowRun
+
+
+class WorkflowReportView(views.APIView):
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get(self, request, workflow_id):
+        workflow = (
+            WorkflowRun.objects.filter(user=request.user, id=workflow_id)
+            .prefetch_related("logs", "assets")
+            .first()
+        )
+        if workflow is None:
+            return Response({"detail": "Report not found"}, status=404)
+
+        state = workflow.state or {}
+        anomalies = self._extract_anomalies(state)
+        dashboard = self._build_dashboard(workflow, state, anomalies)
+
+        return Response(
+            {
+                "workflow_id": workflow.id,
+                "report_type": workflow.workflow_type or "enterprise_ai_report",
+                "title": workflow.title,
+                "status": workflow.status,
+                "ai_summary": workflow.final_response,
+                "dashboard": dashboard,
+                "pdf_report": {
+                    "available": True,
+                    "download_url": f"/api/reports/{workflow.id}/pdf/",
+                },
+                "anomalies": anomalies,
+                "approval": {
+                    "required": bool(state.get("approval_required")),
+                    "pending": workflow.status == WorkflowRun.Status.WAITING_APPROVAL,
+                },
+                "assets": [
+                    {"id": asset.id, "name": asset.name, "asset_type": asset.asset_type}
+                    for asset in workflow.assets.all()
+                ],
+                "logs": [
+                    {
+                        "agent_name": log.agent_name,
+                        "output": log.output,
+                        "latency_ms": log.latency_ms,
+                        "confidence": log.confidence,
+                        "created_at": log.created_at,
+                    }
+                    for log in workflow.logs.all()
+                ],
+            }
+        )
+
+    def _build_dashboard(self, workflow, state, anomalies):
+        logs = list(workflow.logs.all())
+        return {
+            "agent_count": len(logs),
+            "average_confidence": round(sum(log.confidence for log in logs) / len(logs), 3) if logs else 0,
+            "total_latency_ms": sum(log.latency_ms for log in logs),
+            "has_anomalies": bool(anomalies),
+            "workflow_type": workflow.workflow_type,
+            "errors": state.get("errors", []),
+        }
+
+    def _extract_anomalies(self, state):
+        anomalies = []
+        for error in state.get("errors", []):
+            anomalies.append({"severity": "critical", "type": "workflow_error", "message": error})
+
+        eda = state.get("eda_results") or {}
+        for item in eda.get("anomalies", []):
+            anomalies.append({"severity": "high", "type": "eda_anomaly", "message": item})
+
+        ml = state.get("ml_results") or {}
+        metrics = ml.get("metrics") or {}
+        accuracy = metrics.get("accuracy")
+        if accuracy is not None and accuracy < 0.7:
+            anomalies.append(
+                {
+                    "severity": "medium",
+                    "type": "model_accuracy",
+                    "message": f"Model accuracy is below threshold: {accuracy}",
+                }
+            )
+
+        return anomalies
+
+
+class WorkflowReportPdfView(views.APIView):
+    permission_classes = (permissions.IsAuthenticated,)
+
+    def get(self, request, workflow_id):
+        workflow = WorkflowRun.objects.filter(user=request.user, id=workflow_id).first()
+        if workflow is None:
+            return Response({"detail": "Report not found"}, status=404)
+
+        buffer = BytesIO()
+        self._write_pdf(buffer, workflow)
+        buffer.seek(0)
+        filename = f"aeaios-workflow-{workflow.id}-report.pdf"
+        return FileResponse(buffer, as_attachment=True, filename=filename, content_type="application/pdf")
+
+    def _write_pdf(self, buffer, workflow):
+        from matplotlib.backends.backend_pdf import PdfPages
+        import matplotlib.pyplot as plt
+
+        lines = [
+            f"AEAIOS Workflow Report #{workflow.id}",
+            f"Title: {workflow.title}",
+            f"Status: {workflow.status}",
+            f"Report type: {workflow.workflow_type or 'enterprise_ai_report'}",
+            "",
+            "AI Summary:",
+            workflow.final_response or "No final response is available yet.",
+        ]
+
+        with PdfPages(buffer) as pdf:
+            fig = plt.figure(figsize=(8.27, 11.69))
+            fig.text(0.08, 0.94, lines[0], fontsize=16, weight="bold", va="top")
+            fig.text(0.08, 0.88, "\n".join(lines[1:]), fontsize=10, va="top", wrap=True)
+            fig.text(0.08, 0.06, "Generated by Autonomous Enterprise AI Operating System", fontsize=8)
+            pdf.savefig(fig, bbox_inches="tight")
+            plt.close(fig)

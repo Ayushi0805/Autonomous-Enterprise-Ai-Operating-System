@@ -1,0 +1,204 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Autonomous Enterprise AI Operating System</title>
+  <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">AEAIOS</div>
+    <nav>
+      <a class="active" href="/">Command Center</a>
+      <a href="#launch">Launch</a>
+      <a href="#assets">Assets</a>
+      <a href="#workflows">Workflows</a>
+      <a href="#approvals">Approvals</a>
+    </nav>
+  </aside>
+
+  <main class="shell">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Autonomous Enterprise AI Operating System</p>
+        <h1>AI command center</h1>
+      </div>
+      <div class="top-actions">
+        {% if request.user.is_authenticated %}
+          <span class="status">Signed in as {{ request.user.username }}</span>
+          <a class="button ghost" href="/admin/logout/">Log out</a>
+        {% else %}
+          <a class="button" href="/admin/login/?next=/">Sign in</a>
+        {% endif %}
+      </div>
+    </header>
+
+    {% if messages %}
+      <section class="messages">
+        {% for message in messages %}
+          <div class="message {{ message.tags }}">{{ message }}</div>
+        {% endfor %}
+      </section>
+    {% endif %}
+
+    <section class="metrics">
+      <article><span>12</span><p>Specialized agents</p></article>
+      <article><span>5</span><p>n8n workflows</p></article>
+      <article><span>{{ workflows|length }}</span><p>Recent runs</p></article>
+      <article><span>{{ approvals|length }}</span><p>Approval items</p></article>
+    </section>
+
+    {% if not request.user.is_authenticated %}
+      <section class="panel">
+        <h2>Sign In Required</h2>
+        <p class="empty">Sign in with your Django admin account to upload assets, start workflows, approve results, and trigger n8n automations from this command center.</p>
+        <a class="button" href="/admin/login/?next=/">Sign in</a>
+      </section>
+    {% else %}
+      <section class="grid">
+        <div class="panel wide">
+          <div class="panel-head">
+            <h2>Workflow graph</h2>
+            <span>Upload -> Router -> Planner -> Specialist Agents -> Validation -> Approval -> n8n</span>
+          </div>
+          <div class="graph">
+            <div>Upload</div><i></i><div>Router</div><i></i><div>Planner</div><i></i><div>RAG / ML / CV</div><i></i><div>Report</div>
+          </div>
+        </div>
+
+        <section class="panel" id="launch">
+          <div class="panel-head"><h2>Start AI workflow</h2></div>
+          <form class="form" method="post" action="{% url 'dashboard-start-workflow' %}">
+            {% csrf_token %}
+            <label>
+              Title
+              <input name="title" value="Quarterly revenue intelligence" required>
+            </label>
+            <label>
+              Business question
+              <textarea name="query" rows="4" required>Analyze revenue risk and generate recommendations</textarea>
+            </label>
+            <label>
+              Attach assets
+              <select name="asset_ids" multiple>
+                {% for asset in assets %}
+                  <option value="{{ asset.id }}">{{ asset.name }} (#{{ asset.id }})</option>
+                {% endfor %}
+              </select>
+            </label>
+            <label class="check">
+              <input type="checkbox" name="require_approval" checked>
+              Require human approval
+            </label>
+            <button class="button" type="submit">Start workflow</button>
+          </form>
+        </section>
+
+        <section class="panel" id="assets">
+          <div class="panel-head"><h2>Assets</h2></div>
+          <form class="form inline-upload" method="post" action="{% url 'dashboard-upload-asset' %}" enctype="multipart/form-data">
+            {% csrf_token %}
+            <input type="file" name="file" required>
+            <button class="button" type="submit">Upload asset</button>
+          </form>
+          {% if assets %}
+            <ul class="run-list">
+              {% for asset in assets %}
+                <li>
+                  <div>
+                    <strong>{{ asset.name }}</strong>
+                    <span>#{{ asset.id }} · {{ asset.asset_type }} · {{ asset.created_at|date:"M j, H:i" }}</span>
+                  </div>
+                  <form method="post" action="{% url 'dashboard-ingest-asset' asset.id %}">
+                    {% csrf_token %}
+                    <button class="link-button" type="submit">Index for RAG</button>
+                  </form>
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="empty">No assets yet. Upload a PDF, CSV, image, text file, or spreadsheet.</p>
+          {% endif %}
+        </section>
+
+        <section class="panel wide" id="workflows">
+          <div class="panel-head"><h2>Recent workflow runs</h2></div>
+          {% if workflows %}
+            <div class="table">
+              <div class="table-row table-head-row">
+                <span>Workflow</span><span>Status</span><span>Type</span><span>Actions</span>
+              </div>
+              {% for workflow in workflows %}
+                <div class="table-row">
+                  <div>
+                    <strong>#{{ workflow.id }} · {{ workflow.title }}</strong>
+                    <small>{{ workflow.query|truncatechars:120 }}</small>
+                  </div>
+                  <span class="pill {{ workflow.status }}">{{ workflow.status }}</span>
+                  <span>{{ workflow.workflow_type|default:"routing pending" }}</span>
+                  <div class="actions">
+                    <a class="link-button" href="{% url 'dashboard-report-detail' workflow.id %}">View report</a>
+                    <a class="link-button" href="{% url 'workflow-report-pdf' workflow.id %}" target="_blank">PDF</a>
+                    <form method="post" action="{% url 'dashboard-trigger-n8n-report' workflow.id %}">
+                      {% csrf_token %}
+                      <input type="hidden" name="email" value="{{ request.user.email }}">
+                      <input class="compact-input" type="password" name="password" placeholder="Django password" required>
+                      <button class="link-button" type="submit">Send via n8n</button>
+                    </form>
+                  </div>
+                </div>
+              {% endfor %}
+            </div>
+          {% else %}
+            <p class="empty">No workflow runs yet. Start one from the launch form.</p>
+          {% endif %}
+        </section>
+
+        <section class="panel" id="approvals">
+          <div class="panel-head"><h2>Approvals</h2></div>
+          {% if approvals %}
+            <ul class="run-list">
+              {% for approval in approvals %}
+                <li>
+                  <div>
+                    <strong>{{ approval.title }}</strong>
+                    <span>#{{ approval.id }} · {{ approval.status }} · workflow #{{ approval.workflow_id }}</span>
+                  </div>
+                  {% if approval.status == "pending" %}
+                    <div class="approval-actions">
+                      <form method="post" action="{% url 'dashboard-approval-decision' approval.id 'approved' %}">
+                        {% csrf_token %}
+                        <button class="link-button positive" type="submit">Approve</button>
+                      </form>
+                      <form method="post" action="{% url 'dashboard-approval-decision' approval.id 'rejected' %}">
+                        {% csrf_token %}
+                        <button class="link-button danger" type="submit">Reject</button>
+                      </form>
+                    </div>
+                  {% endif %}
+                </li>
+              {% endfor %}
+            </ul>
+          {% else %}
+            <p class="empty">No approval requests yet.</p>
+          {% endif %}
+        </section>
+
+        <section class="panel">
+          <div class="panel-head"><h2>Agent stack</h2></div>
+          <ul class="agent-list">
+            <li>Router Agent <span>dynamic routing</span></li>
+            <li>Retrieval Agent <span>semantic search</span></li>
+            <li>EDA Agent <span>data profiling</span></li>
+            <li>ML Agent <span>auto training</span></li>
+            <li>Vision Agent <span>OCR + image metadata</span></li>
+            <li>Validation Agent <span>grounding checks</span></li>
+          </ul>
+        </section>
+      </section>
+    {% endif %}
+  </main>
+</body>
+</html>

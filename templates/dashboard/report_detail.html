@@ -1,0 +1,92 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Workflow Report #{{ workflow.id }}</title>
+  <link rel="stylesheet" href="{% static 'css/dashboard.css' %}">
+</head>
+<body>
+  <aside class="sidebar">
+    <div class="brand">AEAIOS</div>
+    <nav>
+      <a href="/">Command Center</a>
+      <a class="active" href="#report">Report</a>
+      <a href="{% url 'workflow-report-pdf' workflow.id %}">Download PDF</a>
+    </nav>
+  </aside>
+
+  <main class="shell" id="report">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Workflow Report #{{ workflow.id }}</p>
+        <h1>{{ workflow.title }}</h1>
+      </div>
+      <div class="top-actions">
+        <span class="status">{{ workflow.status }}</span>
+        <a class="button ghost" href="/">Back</a>
+      </div>
+    </header>
+
+    <section class="metrics">
+      <article><span>{{ dashboard.agent_count }}</span><p>Agents executed</p></article>
+      <article><span>{{ dashboard.average_confidence }}</span><p>Average confidence</p></article>
+      <article><span>{{ dashboard.total_latency_ms }}</span><p>Total latency ms</p></article>
+      <article><span>{{ anomalies|length }}</span><p>Anomalies</p></article>
+    </section>
+
+    <section class="grid">
+      <article class="panel wide">
+        <div class="panel-head">
+          <h2>AI Summary</h2>
+          <span>{{ workflow.workflow_type|default:"enterprise_ai_report" }}</span>
+        </div>
+        <pre class="report-text">{{ workflow.final_response|default:"No final response is available yet." }}</pre>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head"><h2>Business Question</h2></div>
+        <p>{{ workflow.query|default:"No query was provided." }}</p>
+      </article>
+
+      <article class="panel">
+        <div class="panel-head"><h2>Assets</h2></div>
+        {% if workflow.assets.all %}
+          <ul class="agent-list">
+            {% for asset in workflow.assets.all %}
+              <li>{{ asset.name }} <span>{{ asset.asset_type }}</span></li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="empty">No assets were attached.</p>
+        {% endif %}
+      </article>
+
+      <article class="panel">
+        <div class="panel-head"><h2>Anomalies</h2></div>
+        {% if anomalies %}
+          <ul class="agent-list">
+            {% for anomaly in anomalies %}
+              <li>{{ anomaly.message }} <span>{{ anomaly.severity }}</span></li>
+            {% endfor %}
+          </ul>
+        {% else %}
+          <p class="empty">No anomalies detected.</p>
+        {% endif %}
+      </article>
+
+      <article class="panel">
+        <div class="panel-head"><h2>Agent Logs</h2></div>
+        <ul class="agent-list">
+          {% for log in logs %}
+            <li>{{ log.agent_name }} <span>{{ log.confidence }} confidence</span></li>
+          {% empty %}
+            <li>No agent logs yet. <span>pending</span></li>
+          {% endfor %}
+        </ul>
+      </article>
+    </section>
+  </main>
+</body>
+</html>

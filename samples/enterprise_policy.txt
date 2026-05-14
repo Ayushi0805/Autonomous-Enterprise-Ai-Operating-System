@@ -1,0 +1,9 @@
+Enterprise AI Approval Policy
+
+Critical business recommendations require manager approval before distribution.
+Critical actions include revenue forecasts, staffing recommendations, financial risk alerts, customer churn interventions, and automated vendor communications.
+
+The AI system must generate a report with citations, confidence indicators, known limitations, and recommended next steps.
+If the workflow detects anomalies, data quality issues, model accuracy below threshold, or missing source context, it must notify the operations manager.
+
+Approved workflows may send final reports to stakeholders. Rejected workflows must be marked for human review.
